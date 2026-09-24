@@ -1,0 +1,91 @@
+# Projeto local n8n - fluxo "ENVIO PDF" (Maxbot + Google Drive + Sheets)
+#
+# Uso:
+#   docker compose up -d
+#   docker compose logs -f n8n     (acompanhar)
+#   docker compose exec n8n n8n --version   (conferir versao instalada)
+#
+# n8n fica em http://localhost:5678
+#
+# Persistencia:
+#   - volume "n8n_data"       -> /home/node/.n8n (config, credenciais cifradas, binarios de execucao)
+#   - volume "postgres_data"  -> dados do Postgres (registro do n8n + tabela de lock do workflow)
+#
+# Nao versionar o arquivo .env (contem POSTGRES_PASSWORD e N8N_ENCRYPTION_KEY reais).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-n8n}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-n8n}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n} -d ${POSTGRES_DB:-n8n}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.40.5   # versao fixada (a que foi validada); atualize de proposito
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      # ---- fuso horario ----
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+
+      # ---- chave de criptografia das credenciais (persistente!) ----
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?defina N8N_ENCRYPTION_KEY no .env (gere uma vez e nunca troque)}
+
+      # ---- acesso local (sem HTTPS): cookie precisa ser "insecure" ----
+      N8N_SECURE_COOKIE: "false"
+      N8N_WEBHOOK_URL: http://localhost:5678/
+      N8N_RUNNERS_ENABLED: "true"
+
+      # n8n 2.x bloqueia $env nos Code nodes por padrao; o workflow le as ENVPDF_*.
+      # Contrapartida: qualquer Code node passa a poder ler TODAS as variaveis
+      # deste container (inclusive N8N_ENCRYPTION_KEY) - ok num n8n local de
+      # um unico operador; nao replicar assim em servidor compartilhado.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+
+      # ---- backend Postgres (tambem guarda a tabela de lock do workflow) ----
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-n8n}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+
+      # ---- variaveis do workflow ENVIO PDF (ENVPDF_*) ----
+      # Nenhum segredo aqui: tokens do Maxbot ficam so em credenciais do n8n.
+      ENVPDF_MODO_TESTE: ${ENVPDF_MODO_TESTE:-true}
+      ENVPDF_TELEFONE_TESTE: ${ENVPDF_TELEFONE_TESTE:-5546991359005}
+      ENVPDF_TELEFONE_ALERTA: ${ENVPDF_TELEFONE_ALERTA:-5546991359005}
+      ENVPDF_PASTA_RAIZ_ID: ${ENVPDF_PASTA_RAIZ_ID:-1py_-XOuvDYGNDp0LRDMYtQWQTK5NO41_}
+      ENVPDF_PASTA_ENVIADOS_ID: ${ENVPDF_PASTA_ENVIADOS_ID:-1w1OyGbL6pcv6-IRH0Ka2Yg9Y5JJwNcec}
+      # Vazio ate voce criar a pasta privada de copias e preencher no .env -
+      # o workflow (no [CFG] Configuração) recusa rodar sem isso, com um erro
+      # claro, mas o container sobe normalmente para voce configurar pela UI.
+      ENVPDF_PASTA_LINKS_ID: ${ENVPDF_PASTA_LINKS_ID:-}
+      ENVPDF_PLANILHA_ID: ${ENVPDF_PLANILHA_ID:-1UTXndd5g4N8czVpP1cGJIm_PuNVeyvB2fNimrlBVzBs}
+      ENVPDF_PLANILHA_ABA: ${ENVPDF_PLANILHA_ABA:-Página1}
+      ENVPDF_MAX_PDFS_POR_EXECUCAO: ${ENVPDF_MAX_PDFS_POR_EXECUCAO:-1}
+      ENVPDF_ARQUIVO_TESTE_ID: ${ENVPDF_ARQUIVO_TESTE_ID:-}
+      ENVPDF_MAX_TENTATIVAS: ${ENVPDF_MAX_TENTATIVAS:-3}
+      ENVPDF_PAUSA_SEGUNDOS: ${ENVPDF_PAUSA_SEGUNDOS:-5}
+      ENVPDF_ENVIO_TRAVADO_MINUTOS: ${ENVPDF_ENVIO_TRAVADO_MINUTOS:-30}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/workflows:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  n8n_data:
+  postgres_data:

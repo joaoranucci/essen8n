@@ -1,0 +1,135 @@
+
+[1] [CFG] Configuracao
+  PASS  mapa por ID tem as 13 pastas
+  PASS  IDs de pasta -> template conferem com a tabela do operador
+  PASS  COBRANCA 2 sem template (54581 exige 2 PDFs) e nunca aponta 54566
+  PASS  CANCELAMENTOS sem template
+  PASS  54563/54564 (parcelamento 2/3 links) nao usados
+  PASS  cfg TESTE: modo TESTE
+  PASS  cfg TESTE continua TESTE mesmo com ENVPDF_MODO_TESTE=false
+  PASS  cfg PRODUCAO com MODO_TESTE=false vira PRODUCAO
+  PASS  env bloqueado pelo n8n -> erro claro (nao cai em silencio nos padroes)
+  PASS  sem ENVPDF_PASTA_LINKS_ID -> recusa rodar
+
+[2] Descoberta de PDFs: ENVIADOS excluida
+  PASS  consulta nivel 2 NAO inclui ENVIADOS como pai
+  PASS  consulta de PDFs NAO busca dentro de ENVIADOS
+  PASS  consulta de PDFs busca nas categorias e subpastas
+  PASS  mapa de pastas nao contem ENVIADOS
+  PASS  consulta nivel 2 NAO inclui LINKS_ENVIO_PDF como pai
+  PASS  consulta de PDFs NAO busca em LINKS_ENVIO_PDF (nem no mapa de pastas)
+
+[3] [SEL] Selecionar PDFs: template pela PASTA (id), categoria pelo ancestral
+  PASS  FGTS direto -> 54556
+  PASS  PDF em subpasta de FGTS -> categoria ancestral FGTS, 54556
+  PASS  PDF na raiz -> sem template (nao aproxima)
+  PASS  CANCELAMENTOS -> sem template, pendencia registrada
+  PASS  COBRANCA 2 -> bloqueada, cita 54581, nunca 54566
+  PASS  pasta renomeada mas mesmo ID -> ainda 54566 (ID manda, nome nao)
+  PASS  pasta fora do mapa -> PASTA_SEM_MODELO com o id
+  PASS  registra pasta de origem + categoria
+
+[4] [BASE] + [ID]: identificar o PAGADOR pelo conteudo
+  PASS  planilha indexada (3 documentos)
+  PASS  boleto DOCLA/beneficiaria + pagador A -> cliente A (nao o escritorio)
+  PASS  TESTE: destino = telefone de teste (nunca o do cliente)
+  PASS  PRODUCAO (modo do cfg): destino = telefone do cliente
+  PASS  documentos do escritorio nao viram cliente
+  PASS  pagador B -> cliente B, template inalterado (pasta manda)
+  PASS  pagador fora da planilha -> bloqueia CLIENTE_NAO_ENCONTRADO
+  PASS  so CNPJ do escritorio -> bloqueia SO_DOCUMENTO_DO_ESCRITORIO
+  PASS  pasta sem template bloqueia mesmo com cliente certo
+  PASS  cliente sem telefone -> bloqueia TELEFONE_AUSENTE
+  PASS  nome do arquivo aponta outro cliente -> DUVIDA_TITULAR (nome nao identifica, mas desmente)
+  PASS  dois clientes como pagador -> MAIS_DE_UM_CLIENTE (nao chuta)
+  PASS  sem texto -> PDF_SEM_TEXTO (vai para OCR/alerta)
+
+[5] [CTRL] Decidir -> ENVIAR / ALERTAR / REGISTRAR / PULAR
+  PASS  cliente ok, sem registro -> ENVIAR (ENVIANDO, tentativa 1)
+  PASS  ja ACEITO -> PULAR (sem reenvio)
+  PASS  INCERTO -> PULAR (nunca repete sozinho)
+  PASS  ENVIANDO (em andamento) -> PULAR
+  PASS  ERRO_ENVIO com tentativas esgotadas -> PULAR
+  PASS  ERRO_ENVIO com tentativas sobrando -> ENVIAR (tentativa 2)
+  PASS  bloqueio novo -> ALERTAR + registro BLOQUEADO
+  PASS  mesmo bloqueio ja avisado -> REGISTRAR (nao reavisa)
+  PASS  Switch [CTRL] Acao: 4 saidas na ordem ENVIAR/ALERTAR/REGISTRAR/PULAR
+  PASS  Switch ligado: 0->Reservar, 1->Alerta, 2->Gravar sem aviso, 3->Proximo
+
+[6] Link do PDF: a COPIA e compartilhada, o original nunca
+  PASS  info1 usa o ID da COPIA
+  PASS  info1 NAO contem o ID do original
+  PASS  sem falha previa quando o compartilhamento da copia deu certo
+  PASS  copia/compartilhamento falhou -> LINK_NAO_LIBERADO (nao manda link quebrado)
+  PASS  [DRIVE] Liberar link atua sobre o item da copia ($json.id), nao sobre o original
+  PASS  copia NAO fica na mesma pasta (sameFolder=false) e vai para a pasta privada de links
+  PASS  caminho: Reservar envio -> Copiar -> Liberar link -> Mensagem
+
+[7] Maxbot: contato SEM lista[0], whatsapp x mobile_phone
+  PASS  seu contato: bate em mobile_phone (9 digitos) -> aceito, contact_id 10656708
+  PASS  bate em whatsapp (formato antigo) -> aceito
+  PASS  devolveu OUTRO contato (nada bate) -> CONTATO_DIVERGENTE, NAO usa lista[0]
+  PASS    ...e o payload vira get_status (nada e enviado/alterado)
+  PASS  dois contatos batem -> CONTATO_AMBIGUO (bloqueia)
+  PASS  bate so no mobile_phone (whatsapp diferente) -> aceito
+  PASS  lista vazia -> put_contact (cria contato novo)
+  PASS  varios retornados, so um bate -> usa esse, ignora lista[0] aleatorio
+  PASS    ...mesmo se o certo NAO for o primeiro da lista
+
+[8] Trava de TESTE no ponto imediatamente anterior ao envio
+  PASS  TESTE + destino cliente real -> BLOQUEADO
+  PASS  TESTE + ENVPDF_MODO_TESTE=false + cliente real -> AINDA BLOQUEADO (env sozinha nao vira producao)
+  PASS  TESTE + env com TELEFONE_TESTE trocado para o cliente + MODO_TESTE=false -> AINDA BLOQUEADO (telefone fixo no codigo)
+  PASS  TESTE + telefone de teste + contact_id 10656708 -> pode enviar (send_template_integration com esse contact_id)
+  PASS  TESTE + telefone de teste MAS contact_id diferente (ex.: contato errado) -> BLOQUEADO
+  PASS  TESTE: ate alertas so para o contato de teste
+  PASS  TESTE: cliente real nem chega ao get_contact/set_contact (payload get_status, sem escrita)
+  PASS  TESTE: telefone de teste segue para get_contact
+  PASS  PRODUCAO: get_contact normal para o cliente
+  PASS  PRODUCAO com ENVPDF_MODO_TESTE=true -> tambem bloqueia cliente (rede de seguranca)
+  PASS  PRODUCAO com modo=false -> libera o cliente (somente aqui)
+  PASS  alerta so pode ir para ENVPDF_TELEFONE_ALERTA
+
+[9] Resultado do envio: ACEITO / FALHA / INCERTO + arquivamento
+  PASS  status 1 -> ACEITO
+  PASS  status 2 (processando) -> ACEITO
+  PASS  recusa da API -> ERRO_ENVIO (pode retentar)
+  PASS  HTTP 500 -> INCERTO (nao repete sozinho)
+  PASS  timeout apos enviar -> INCERTO
+  PASS  DNS/conexao nao abriu -> ERRO_ENVIO (seguro retentar)
+  PASS  PRODUCAO: ACEITO -> registro com arquivamento=PENDENTE (aguarda mover)
+  PASS  TESTE: ACEITO -> arquivamento VAZIO (original nunca e movido em teste)
+  PASS  porteiro: modo TESTE -> false (nao move) ; PRODUCAO -> true
+  PASS  Aceito?[true] -> porteiro; porteiro[true] -> Mover; porteiro[false] -> Pausa (sem tocar no Drive)
+  PASS  [ARQ] Buscar pendentes so pega modo=PRODUCAO (aceito so em teste nunca e arquivado)
+  PASS  INCERTO -> arquivamento vazio (NAO arquiva)
+  PASS  ERRO_ENVIO -> arquivamento vazio (NAO arquiva)
+  PASS  Aceito?[false] -> Falha no envio (sem mover)
+  PASS  mover atua no arquivo ORIGINAL (file_id do registro) para a pasta ENVIADOS
+  PASS  mover OK -> arquivamento=OK, estado segue ACEITO
+  PASS  mover FALHOU -> arquivamento=PENDENTE + ARQUIVAMENTO_PENDENTE no erro, estado continua ACEITO (sem reenvio)
+  PASS  retomada: F1 movido -> OK ; F2 falhou -> continua PENDENTE (pareado por posicao)
+  PASS  retomada: nenhum no de Maxbot na sub-cadeia [ARQ] (so move, nunca reenvia)
+
+[10] Fluxo de ERRO (execucao separada: [CFG] e o laco NAO existem) + lock
+  PASS  TESTE: nos do caminho de ERRO so referenciam nos que rodam nesse caminho
+  PASS  TESTE: [LOCK] Reservar destino nao depende de [CFG]
+  PASS  PRODUCAO: nos do caminho de ERRO so referenciam nos que rodam nesse caminho
+  PASS  PRODUCAO: [LOCK] Reservar destino nao depende de [CFG]
+  PASS  falha do Postgres no lock -> PARA a execucao com mensagem clara (nao finge duplicado)
+  PASS  duplicado no fluxo de ERRO -> termina em silencio (sem cair no laco de PDFs)
+  PASS  duplicado de cliente -> segue para "Proximo arquivo" sem enviar nem gravar
+  PASS  [LOCK] Adquirido?: true -> Montar get_contact ; false -> Nao adquirido
+  PASS  os 3 produtores (cliente, alerta, erro geral) passam pelo lock antes do get_contact
+  PASS  lock e liberado logo apos Avaliar envio, antes do roteamento por contexto
+  PASS  Restaurar item: lock adquirido devolve o item ORIGINAL (envio/registro intactos) + lock_adquirido=true
+  PASS  CADEIA: item restaurado alimenta [MAXBOT] Montar get_contact normalmente (era o bug: DESTINO_INVALIDO)
+  PASS  Restaurar item: nenhuma linha (lock em uso; alwaysOutputData devolve a entrada) -> lock_adquirido=false, item preservado
+  PASS  Restaurar item: erro do Postgres -> lock_adquirido=false com o erro
+  PASS  [LOCK] Adquirido? decide por lock_adquirido === true
+  PASS  Reservar devolve o item original pela propria consulta (RETURNING ... payload; 5o parametro = $json)
+  PASS  Retomar avaliacao: apos o DELETE ({success:true}) o resultado do envio volta para o roteamento por contexto
+  PASS  Origem do envio consegue rotear o item retomado (contexto cliente -> saida 0)
+
+==========================
+PASS: 112   FAIL: 0

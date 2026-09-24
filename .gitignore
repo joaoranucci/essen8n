@@ -1,0 +1,13 @@
+.env
+*.env
+!.env.example
+
+# n8n / node
+node_modules/
+*.log
+
+# workflow exports que possam conter dados de execucao/teste
+/exports/*.local.json
+
+# scratch
+*.tmp
